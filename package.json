@@ -1,0 +1,14 @@
+{
+  "name": "cowork-bridge",
+  "version": "1.0.0",
+  "description": "Let Claude Cowork assistants ask each other questions through private Slack rooms, with every answer approved by its owner.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "cowork-bridge": "bin/cowork-bridge.mjs" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@slack/socket-mode": "^2.0.4",
+    "@slack/web-api": "^7.9.3"
+  }
+}

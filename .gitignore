@@ -1,0 +1,8 @@
+node_modules/
+.env
+*.env
+config.json
+directory.json
+state/
+logs/
+reader-home/
