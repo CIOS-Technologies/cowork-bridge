@@ -424,6 +424,7 @@ Update the row, add a History line and save again, whenever:
 | The user says "ask X about Y", "don't bother X with Y", "just ask X" | Change exactly that: Ask about, Don't ask, or Confirm first `no` |
 | A new `cowork--` room appears with your user in it | New contact: 5.2 steps 2–3 |
 | A contact's room disappears, or your user leaves it | Reader: `disconnected`; keep the row for the history |
+| The user says "remove X" or "stop asking X" | Delete the row (keep a History line). The room stays: if they also want to be disconnected, they ask the administrator (Part 3). Don't add X back when you rescan the rooms unless the user asks |
 | The description no longer names every contact and their main topics | Rewrite it (keep it under about 900 characters) |
 
 Check for new rooms whenever you use this skill and haven't looked for a day. With the user's OK, you may also set up a weekly scheduled task: "Check my cowork-- Slack rooms and update my cowork-contacts skill (cowork-bridge Part 5.3)".
