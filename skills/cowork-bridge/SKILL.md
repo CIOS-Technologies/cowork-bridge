@@ -1,6 +1,6 @@
 ---
 name: cowork-bridge
-description: Let Cowork assistants ask each other questions through private Slack pair rooms, where the person whose Cowork answers approves every answer. Use to (1) ask a colleague's Cowork something, for example "ask Alice's Cowork what was decided about X" or "check with Bob's assistant", or when the knowledge you need clearly lives in a colleague's Cowork context; (2) keep the user's contacts list current, saying which colleague's Cowork to ask about what ("ask Alice about pricing from now on", "who can I ask about X?", a new cowork-- room); (3) make the user's own Cowork answerable by colleagues ("set up cowork-bridge", "let colleagues ask my Cowork"); (4) for the administrator, connect pairs of people ("connect Alice with Bob"). Also use for questions about the bridge's status, start, stop, update, sign-in or troubleshooting.
+description: Let Cowork assistants ask each other questions through private Slack pair rooms, where the person whose Cowork answers approves every answer. Use to (1) ask a colleague's Cowork something, for example "ask Alice's Cowork what was decided about X" or "check with Bob's assistant", or when the knowledge you need clearly lives in a colleague's Cowork context; (2) keep the user's contacts list current, saying which colleague's Cowork to ask about what ("ask Bob about pricing from now on", "who can I ask about X?", a new cowork-- room); (3) make the user's own Cowork answerable by colleagues ("set up cowork-bridge", "let colleagues ask my Cowork"); (4) for the administrator, connect pairs of people ("connect Alice with Bob"). Also use for questions about the bridge's status, start, stop, update, sign-in or troubleshooting.
 ---
 
 # cowork-bridge
@@ -371,7 +371,7 @@ The user's contacts live in their own skill, `cowork-contacts`, saved with your 
 ````markdown
 ---
 name: cowork-contacts
-description: <User>'s colleagues whose Cowork can be asked through cowork-bridge, and what to ask each. Maksym: CRM, sales pipeline, customer contracts. Alice: pricing, invoicing. Before guessing or searching on these topics, ask that person's Cowork; follow the cowork-bridge skill, Part 1. Keep this list current (cowork-bridge Part 5).
+description: <User>'s colleagues whose Cowork can be asked through cowork-bridge, and what to ask each. Bob: CRM, sales pipeline, customer contracts. Carol: pricing, invoicing. Before guessing or searching on these topics, ask that person's Cowork; follow the cowork-bridge skill, Part 1. Keep this list current (cowork-bridge Part 5).
 ---
 
 # Cowork contacts of <User>
@@ -380,14 +380,14 @@ Updated <YYYY-MM-DD>. Maintained by Cowork; the user may edit it, and their word
 
 | Contact | Room | Ask about | Don't ask | Confirm first | Reader |
 |---|---|---|---|---|---|
-| Maksym | cowork--denys--maksym | CRM; sales pipeline; customer contracts | Code internals | yes | answers (2026-11-24) |
+| Bob | cowork--alice--bob | CRM; sales pipeline; customer contracts | Code internals | yes | answers (2026-11-24) |
 
 ## What each contact said about themselves
-- Maksym (2026-11-24, approved answer): "<short summary of their reply to the introduction question>"
+- Bob (2026-11-24, approved answer): "<short summary of their reply to the introduction question>"
 
 ## History
-- 2026-11-24 Maksym: answered about the Q4 pipeline. Topic confirmed.
-- 2026-11-25 Maksym: did not know about the hosting bill. Added to Don't ask.
+- 2026-11-24 Bob: answered about the Q4 pipeline. Topic confirmed.
+- 2026-11-25 Bob: did not know about the hosting bill. Added to Don't ask.
 ````
 
 Columns:
@@ -403,7 +403,7 @@ Columns:
 
 ### 5.2 Build it
 
-1. Search your private Slack channels for `cowork--`. Each room your user is in is a contact: the other name in the room name (`cowork--denys--maksym` → Maksym). Skip `cowork--<user>--selftest`.
+1. Search your private Slack channels for `cowork--`. Each room your user is in is a contact: the other name in the room name (`cowork--alice--bob` → Bob, for Alice). Skip `cowork--<user>--selftest`.
 2. For each new contact, ask your user in one message: what would they ask this person about, and is there anything not to ask? Write their words into **Ask about** / **Don't ask**.
 3. With the user's OK, post one **introduction question** to each new contact (Part 1):
    > "Hello from <User>'s Cowork. So I know when to ask you: which topics, projects, decisions and documents can your Cowork answer about, and which should I not ask about? A short list is perfect."
