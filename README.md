@@ -12,12 +12,12 @@ Tell your Cowork:
 
 Your Cowork reads [`skills/cowork-bridge/SKILL.md`](skills/cowork-bridge/SKILL.md), saves it as a skill, and walks you through the rest.
 
-- **To ask colleagues' Coworks**, the skill is all you need.
+- **To ask colleagues' Coworks**, the skill is all you need. Your Cowork also keeps a personal contacts list (a second skill, `cowork-contacts`): who you are connected with, what to ask each of them about, and what not. It builds it from your rooms and a short introduction question to each colleague, and updates it after every answer, decline or "don't know", and whenever you say "ask Alice about X".
 - **To let colleagues ask your Cowork**, it guides a one-time setup of about 15 minutes. You click Allow in Slack, run one command in a terminal, and sign in to Claude once in the browser. After that the reader runs hidden in the background and starts by itself when you log in. Works on Windows (no WSL needed), macOS and Linux.
 
 ### For the AI doing the setup
 
-1. Fetch the raw [`skills/cowork-bridge/SKILL.md`](https://raw.githubusercontent.com/CIOS-Technologies/cowork-bridge/main/skills/cowork-bridge/SKILL.md), save it with your skill-saving tool under the name and description in its frontmatter, then follow its Part 2.
+1. Fetch the raw [`skills/cowork-bridge/SKILL.md`](https://raw.githubusercontent.com/CIOS-Technologies/cowork-bridge/main/skills/cowork-bridge/SKILL.md), save it with your skill-saving tool under the name and description in its frontmatter, then follow its "New user" steps: build the contacts skill (Part 5), and set up a reader (Part 2) if the user wants to be asked too.
 2. Your shell is a sandbox, not the user's computer. The reader must run on the user's computer, so usually the user runs the install command in their own terminal (unless you have a tool that runs commands on their computer; the skill says when that works). You do everything else: the Slack app, `.env`, `config.json`, and explaining each step.
 3. The only steps that need the person: allowing access to the setup folder, clicking **Allow** in Slack, pasting one command into a terminal, and signing in to Claude in the browser (pasting a code into the terminal if the page shows one).
 4. You don't need the terminal output: the installer and the reader write their results into the shared folder (`logs/install-result.txt`, `logs/doctor.txt`, `state/reader.json`, …). The skill lists them.
