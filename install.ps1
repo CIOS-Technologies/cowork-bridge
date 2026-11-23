@@ -10,7 +10,10 @@ param(
   [string]$HomeDir = $(if ($env:COWORK_BRIDGE_HOME) { $env:COWORK_BRIDGE_HOME } else { Join-Path $HOME 'cowork-bridge' }),
   [switch]$NoAutostart
 )
-$ErrorActionPreference = 'Stop'
+# 'Continue', not 'Stop': when output is captured (an AI's shell tool, a log file), Windows PowerShell 5.1 turns
+# anything a program writes to its error stream (Git's progress lines, npm notices) into an error, and 'Stop'
+# would end the installer there. Every step checks its exit code instead, and Fail stops the run.
+$ErrorActionPreference = 'Continue'
 $Repo = if ($env:COWORK_BRIDGE_REPO) { $env:COWORK_BRIDGE_REPO } else { 'https://github.com/CIOS-Technologies/cowork-bridge' }
 function Say($t) { Write-Host "`n$t" -ForegroundColor Cyan }
 function Fail($t) { Write-Host "`nSTOPPED: $t" -ForegroundColor Red; throw "cowork-bridge install stopped: $t" }
@@ -27,8 +30,8 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Say 'Installing Git 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail 'Node.js is still not found. Close this window, open a new PowerShell, and run the command again.' }
 
 $App = Join-Path $HomeDir 'app'
-if (Test-Path (Join-Path $App '.git')) { Say 'Updating the app'; git -C $App pull --ff-only }
-else { Say 'Downloading the app'; git clone --depth 1 $Repo $App }
+if (Test-Path (Join-Path $App '.git')) { Say 'Updating the app'; git -C $App pull -q --ff-only 2>&1 | Out-Host }
+else { Say 'Downloading the app'; git clone -q --depth 1 $Repo $App 2>&1 | Out-Host }
 if ($LASTEXITCODE) { Fail 'could not download the app (git).' }
 # npm.cmd, not npm: PowerShell's default policy blocks npm.ps1.
 Push-Location $App; & npm.cmd ci --omit=dev --no-audit --no-fund --loglevel=error; $npmExit = $LASTEXITCODE; Pop-Location
