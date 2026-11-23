@@ -61,7 +61,7 @@ For a follow-up, reply **inside the same thread**: the reader gets the earlier q
 
 ## Part 2: Make my Cowork answerable (one-time setup, about 15 minutes)
 
-Do every step yourself except the ones marked **USER**. There are only four of those: allowing folder access, clicking **Allow** in Slack, pasting one command into a terminal, and signing in to Claude in the browser.
+Do every step yourself except the ones marked **USER**. The main ones are four: allowing folder access, clicking **Allow** in Slack, pasting one command into a terminal, and signing in to Claude in the browser. Some come up only sometimes: signing in to Slack in your browser, clicking **Yes**/**Allow** on a Windows or macOS permission prompt, sending a Slack "Request to Install", pasting the Slack tokens if they don't want you to read them, and (administrator) running the room command.
 
 ### 2.0 Know where commands run (read this first)
 
@@ -90,7 +90,7 @@ Ask:
 
 ### 2.2 Folder (**USER** allows access)
 
-Ask for access to a folder named `cowork-bridge` in the user's home folder, with your folder-request tool. **USER** allows it (create it if needed):
+Ask for access to a folder named `cowork-bridge` in the user's home folder, with your folder-request tool. **USER** selects it in the folder picker; if it doesn't exist yet, they create it there first (New folder → `cowork-bridge`, inside their home folder):
 - Windows: `C:\Users\<user>\cowork-bridge`
 - macOS: `/Users/<user>/cowork-bridge`
 
@@ -188,7 +188,9 @@ DONE. Your reader runs in the background; no window needs to stay open.
 ```
 The user can then close the terminal. `rooms:` says `none yet` until the administrator connects them.
 
-**Read the result yourself:** `<folder>/logs/install-result.txt` holds `DONE`, or `STOPPED: <reason>`, or `RUNNING` (still going, or the window was closed mid-way). Don't ask the user to copy the output.
+**Read the result yourself:** `<folder>/logs/install-result.txt` holds `DONE`, or `STOPPED: <reason>`, or `RUNNING`, and on the next line the time it was written. Don't ask the user to copy the output.
+- Compare the time with now: a result from before the user ran the command is from an earlier run (they haven't run it yet, or it hasn't got that far).
+- `RUNNING` for more than 15 minutes means the window was closed or is stuck: ask the user to look at the window, or run the command again.
 
 **If it says `STOPPED: <reason>`**, fix the cause and have the user run the same command again (it is safe to repeat). On Windows a red error block follows the STOPPED line; that is expected, only the STOPPED line matters.
 
@@ -200,13 +202,13 @@ The user can then close the terminal. `rooms:` says `none yet` until the adminis
 | `Node.js is still not found` / `Git is still not found` | Close the terminal, open a new one, run again (the new install is not on the old window's path). |
 | `Node.js 20 or newer is needed` (macOS) | Install Node.js (2.6), run again. |
 | `tmux is needed` (Linux/WSL) | `sudo apt install -y tmux`, run again. |
-| `could not download the app` | No internet, or a proxy blocks GitHub. |
+| `could not download the app` (Windows) | No internet, or a proxy blocks GitHub. |
 | `npm could not install the app's packages` | Same as above, for the npm registry. |
-| `Claude Code could not be installed` | Run the command in the message, then run again. |
-| `the reader is not signed in to Claude` | The browser sign-in was not finished. Run again and finish it; paste the code if one is shown. The command must run in a terminal window the user can type into. |
+| `Claude Code could not be installed` (Windows) | Run the command in the message, then run again. |
+| `the reader is not signed in to Claude` / `sign-in has expired` | The browser sign-in was not finished. Run again and finish it; paste the code if one is shown. The command must run in a terminal window the user can type into. |
 | `fix the items marked with a cross` | Read `<folder>/logs/doctor.txt`: the ✗ lines and their `→` hints. Table "`doctor` crosses" in Part 4. A wrong project name is the usual one: see `state/cowork-projects.json`. |
 | `the reader did not start` | Read `<folder>/state/reader.json` (`phase`, `reason`) and `<folder>/logs/reader-screen.txt`; table "Reading `status`" in Part 4. |
-| `unexpected error on line …` (macOS/Linux) | Read the lines above it in the terminal; report at https://github.com/CIOS-Technologies/cowork-bridge/issues if unclear. |
+| `unexpected error on line …` (macOS/Linux) | Usually downloading the app failed (no internet, or files in `<folder>/app` were changed by hand) or the Claude Code install failed. Ask the user for the lines above it; report at https://github.com/CIOS-Technologies/cowork-bridge/issues if unclear. |
 
 ### 2.8 Check it works
 
@@ -239,6 +241,7 @@ The administrator's Slack app has the `groups:write` scope (2.4). The list of pe
 }
 ```
 
+- `user` is the person's Slack member ID: look it up with the Slack connector (search users by name or email). `bot` is the ID they send after Part 2 (2.9).
 - `bot: null` means that person can ask but cannot be asked yet. When they finish Part 2, put their bot ID here and apply again: that invites their bot into their existing rooms.
 - `selftest` creates a room where that person can ask their own reader, for testing.
 
@@ -249,7 +252,7 @@ node <folder>/app/bin/cowork-bridge.mjs rooms --home <folder>              # sho
 node <folder>/app/bin/cowork-bridge.mjs rooms --apply --home <folder>      # creates rooms and invites people and bots
 ```
 
-Then read `<folder>/state/rooms.json` to confirm each room exists, and check that the people received the Slack invitations.
+Both commands also write what they printed to `<folder>/logs/rooms.txt`: read the plan there before applying. Afterwards read `<folder>/state/rooms.json` to confirm each room exists. Run `--apply` again after every change to `directory.json`.
 
 - The administrator's bot leaves every room the administrator isn't part of, so the administrator cannot read other pairs.
 - Rooms only exist for pairs you list; they don't grow with everyone × everyone.
@@ -268,11 +271,11 @@ Commands run on the user's computer, in a terminal: `node <folder>/app/bin/cowor
 | `status` | Is the reader up, its rooms, open questions, autostart on or off |
 | `start` | Starts the reader hidden in the background (refreshes its copy first). Waits until it is ready and connected to Slack |
 | `stop` | Stops the reader |
-| `login` | Claude sign-in for the reader (needs the user: browser, maybe a code, a terminal they can type into) |
+| `login` | Claude sign-in for the reader (needs the user: browser, maybe a code, a terminal they can type into). `login --again` signs in even if the old sign-in still looks valid |
 | `doctor` | Checks the setup and says what to fix |
 | `autostart on` / `autostart off` | Start the reader when the user logs in (Windows: Startup-folder shortcut; macOS: login item) |
 
-Exit codes: `0` fine, `1` problem (the output says what), `2` the reader needs the Claude sign-in.
+Exit codes: `0` fine, `1` problem (the output says what), `2` (from `login` and `start` only) the reader needs the Claude sign-in.
 
 ### Files you can read
 
@@ -281,7 +284,9 @@ All in `<folder>`:
 | File | Tells you |
 |---|---|
 | `logs/install-result.txt` | Last install: `DONE`, `STOPPED: <reason>` or `RUNNING` |
-| `logs/doctor.txt` | Last setup check: ✓ / ✗ lines with hints |
+| `logs/doctor.txt` | Last setup check (first line: when it ran): ✓ / ✗ lines with hints. Only as new as the last install or `doctor` run |
+| `logs/autostart.log` | What happened at each automatic start at login |
+| `logs/rooms.txt` | Administrator: the last room plan or result |
 | `state/reader.json` | The background process: `phase` (see below), `reason`, `updated` (refreshed every 10 s while it runs) |
 | `state/heartbeat.json` | Last contact with Slack (`at`, every minute), the bot and its rooms |
 | `state/bot.json` | The bot's member ID |
@@ -291,7 +296,7 @@ All in `<folder>`:
 | `logs/supervisor.log` | Starts, restarts, answers to start-up questions |
 | `logs/bridge.log` | Slack side |
 
-A `reader.json` whose `updated` is more than a minute old means the background process is not running (whatever `phase` says).
+`updated` and the other times are milliseconds since 1970. A `reader.json` whose `updated` is more than a minute old means the background process is not running, whatever `phase` says, with one exception: `phase: needs_login` with `supervisor_pid: null` is a note left by `start` and stays valid until the user signs in.
 
 ### Reading `status` (or `reader.json`)
 
@@ -300,8 +305,9 @@ A `reader.json` whose `updated` is more than a minute old means the background p
 | `Reader: UP` and `Background process: ready` | Working | Nothing. |
 | `Background process: starting` | Claude Code is starting | Wait a minute and check again. |
 | `Background process: ready` but `Reader: DOWN` or `never started` | Claude Code runs, but the Slack connection does not | Read `logs/bridge.log`. Usually the `xapp-` token in `.env` is wrong (`doctor` checks it). Fix, then run the install command again. |
-| `Reader: DOWN`, `Background process: not running` | Not running (stopped, or the computer restarted with autostart off) | `start`, or run the install command again (also turns autostart on). |
-| `Background process: needs_login` | The reader's Claude sign-in is missing or has expired (about monthly) | **USER** runs the install command again (or `login`, then `start`) in their own terminal. |
+| `Reader: DOWN`, `Background process: not running` (or `phase: stopped`) | Not running: stopped on purpose, or the computer restarted with autostart off | `start`, or run the install command again (also turns autostart on). |
+| Same, but autostart is on and the computer was restarted | The automatic start at login failed | Read `logs/autostart.log` and `logs/supervisor.log`; then run the install command again. On macOS, see the `Cowork data found` row in the next table. |
+| `Background process: needs_login` | The reader's Claude sign-in is missing or has expired (about monthly) | **USER** runs the install command again in their own terminal (it signs in again and restarts), or `login --again`, then `start`. |
 | `Background process: stuck (… Channels are not available …)` | The organization has not turned on Claude Code → Channels (2.1) | An organization owner turns it on; then `start`. |
 | `Background process: stuck` (other reason) | Claude Code shows a question the app does not know how to answer (usually after a Claude Code update) | Read `logs/reader-screen.txt`, run `stop`, and report the screen at https://github.com/CIOS-Technologies/cowork-bridge/issues. |
 | `Background process: restarting` | Claude Code exited and is being restarted | Wait a minute and check again. |
@@ -316,7 +322,7 @@ A `reader.json` whose `updated` is more than a minute old means the background p
 | `.env has SLACK_APP_TOKEN` / `SLACK_BOT_TOKEN` | Step 2.4. |
 | `Slack bot token rejected` | Slack app page → **Install App** → reinstall, copy the new bot token into `.env`. |
 | `Slack app-level token rejected` | Slack app page → **Basic Information → App-Level Tokens**: generate a new one with `connections:write`, put it in `.env`. |
-| `Cowork data found` | Set `cowork_data_dir` (2.5). |
+| `Cowork data found` | Set `cowork_data_dir` (2.5). On macOS, if Cowork is installed and this appears only at automatic starts, it is a privacy permission instead: **USER** opens System Settings → Privacy & Security → Full Disk Access and adds `node` (path: `which node`). |
 | `projects shared with the reader` | Use names exactly as listed in `state/cowork-projects.json` (`available`). |
 | `Claude Code installed` | Run the install command again. |
 | `reader signed in to Claude` | **USER** runs the install command (or `login`) in their own terminal. |

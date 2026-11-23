@@ -18,7 +18,7 @@ Your Cowork reads [`skills/cowork-bridge/SKILL.md`](skills/cowork-bridge/SKILL.m
 ### For the AI doing the setup
 
 1. Fetch the raw [`skills/cowork-bridge/SKILL.md`](https://raw.githubusercontent.com/CIOS-Technologies/cowork-bridge/main/skills/cowork-bridge/SKILL.md), save it with your skill-saving tool under the name and description in its frontmatter, then follow its Part 2.
-2. Your shell is a sandbox, not the user's computer. The reader must run on the user's computer, so the user runs the install command in their own terminal. You do everything else: the Slack app, `.env`, `config.json`, and explaining each step.
+2. Your shell is a sandbox, not the user's computer. The reader must run on the user's computer, so usually the user runs the install command in their own terminal (unless you have a tool that runs commands on their computer; the skill says when that works). You do everything else: the Slack app, `.env`, `config.json`, and explaining each step.
 3. The only steps that need the person: allowing access to the setup folder, clicking **Allow** in Slack, pasting one command into a terminal, and signing in to Claude in the browser (pasting a code into the terminal if the page shows one).
 4. You don't need the terminal output: the installer and the reader write their results into the shared folder (`logs/install-result.txt`, `logs/doctor.txt`, `state/reader.json`, …). The skill lists them.
 5. The installer is safe to run again; every failure ends with `STOPPED: <reason>`, and the skill has a table of fixes. When in doubt, run it again.
@@ -65,10 +65,10 @@ The reader is Claude Code started in `<home>/reader` in **don't-ask mode**:
 
 ## How the reader runs
 
-- **Windows and macOS:** a small background process starts Claude Code in a hidden terminal, with no window. It answers Claude Code's start-up questions the same way every time (confirm the home-made Slack channel, trust the reader folder, keep outside imports off, decline optional offers), restarts Claude Code if it exits, and reports its state (`ready`, `needs_login`, `stuck`, `restarting`, `failed`) to `status`. A shortcut in the Startup folder (Windows) or a login item (macOS) starts it when you log in. No administrator rights needed.
+- **Windows and macOS:** a small background process starts Claude Code in a hidden terminal, with no window. It answers Claude Code's start-up questions the same way every time (confirm the home-made Slack channel, trust the reader folder, keep outside imports off, decline optional offers), restarts Claude Code if it exits, and reports its state (`starting`, `ready`, `needs_login`, `stuck`, `restarting`, `stopped`, `failed`) to `status`. A shortcut in the Startup folder (Windows; a minimised window shows briefly in the taskbar at login) or a login item (macOS) starts it when you log in. No administrator rights needed.
 - **Linux and WSL:** the same, inside a `tmux` session; no autostart.
 - **Sign-in:** the reader has its own Claude sign-in, done by the installer in the browser. It lasts about a month. When it expires, `status` says `needs_login`; run the install command again (or `login`, then `start`).
-- **Results on disk:** the installer writes `logs/install-result.txt`, the checks write `logs/doctor.txt`, and the background process keeps `state/reader.json` current, so an AI with access to the folder can follow along without the terminal.
+- **Results on disk:** the installer writes `logs/install-result.txt`, the checks write `logs/doctor.txt`, automatic starts write `logs/autostart.log`, and the background process keeps `state/reader.json` current, so an AI with access to the folder can follow along without the terminal.
 
 ## Layout on a person's computer
 
@@ -96,7 +96,7 @@ node app/bin/cowork-bridge.mjs snapshot --home <folder>   # rebuild the copy now
 node app/bin/cowork-bridge.mjs rooms [--apply] [room…] --home <folder>   # administrator: create pair rooms
 ```
 
-Exit codes: `0` fine, `1` problem (the output says what), `2` the reader needs the Claude sign-in.
+Exit codes: `0` fine, `1` problem (the output says what), `2` (`login`, `start`) the reader needs the Claude sign-in. `login --again` signs in even when the old sign-in still looks valid.
 
 Install or update with `install.ps1` (Windows) or `install.sh` (macOS / Linux / WSL). Each is one command, shown in the skill, and safe to run again.
 

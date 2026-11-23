@@ -58,7 +58,15 @@ say "Checking the setup"
 cb doctor || fail "fix the items marked with a cross (✗) above, then run the command again."
 say "Starting your reader in the background"
 cb stop >/dev/null 2>&1 || true
-cb start || fail "the reader did not start. See $HOME_DIR/logs/ (reader-screen.txt, supervisor.log) or run: tmux attach -t cowork-bridge"
+rc=0; cb start || rc=$?
+if [ "$rc" = 2 ]; then
+  # The sign-in looked valid but Claude Code asked for it again (expired): sign in again, then retry once.
+  say "The reader's Claude sign-in has expired: signing in again"
+  cb login --again <"$LOGIN_IN" || fail "the reader's Claude sign-in has expired. Run this command again in a terminal window and finish the sign-in in the browser."
+  rc=0; cb start || rc=$?
+fi
+if [ "$rc" = 2 ]; then fail "the reader's Claude sign-in has expired. Run this command again in a terminal window and finish the sign-in in the browser."; fi
+[ "$rc" = 0 ] || fail "the reader did not start. See $HOME_DIR/logs/ (reader-screen.txt, supervisor.log) or run: tmux attach -t cowork-bridge"
 if [ "$(uname)" = "Darwin" ] && [ -z "${COWORK_BRIDGE_NO_AUTOSTART:-}" ]; then say "Turning on autostart at login"; cb autostart on; fi
 say "Status"; cb status || true
 result DONE

@@ -68,12 +68,17 @@ const ours = s => !!s && alive(s.supervisor_pid) && Date.now() - (s.updated || 0
 const heartbeatAt = () => { try { return Date.parse(JSON.parse(fs.readFileSync(path.join(P.state, 'heartbeat.json'), 'utf8')).at) } catch { return 0 } }
 function readScreen() { try { return fs.readFileSync(path.join(P.logs, 'reader-screen.txt'), 'utf8') } catch { return '(no screen captured)' } }
 
-async function doctor() {
-  let good = true
-  // Also keep the result in logs/doctor.txt, so the AI helping with setup can read it from the shared folder.
+// Also keep a command's output in logs/<file> (with the time it ran), so the AI helping with setup can read it
+// from the shared folder instead of asking the person to copy the terminal.
+function keepOutput(file) {
   const lines = [], print = console.log
   console.log = (...a) => { lines.push(a.join(' ')); print(...a) }
-  process.on('exit', () => { try { fs.mkdirSync(P.logs, { recursive: true }); fs.writeFileSync(path.join(P.logs, 'doctor.txt'), `${new Date().toISOString()}\n${lines.join('\n')}\n`) } catch {} })
+  process.on('exit', () => { try { fs.mkdirSync(P.logs, { recursive: true }); fs.writeFileSync(path.join(P.logs, file), `${new Date().toISOString()}\n${lines.join('\n')}\n`) } catch {} })
+}
+
+async function doctor() {
+  let good = true
+  keepOutput('doctor.txt')
   console.log(`cowork-bridge home: ${HOME}\n`)
   good &= ok(fs.existsSync(P.config), 'config.json exists', 'run the cowork-bridge skill in Cowork ("make my Cowork answerable")')
   if (!fs.existsSync(P.config)) return process.exit(1)
@@ -123,7 +128,8 @@ function login() {
   const bin = claudeBin()
   if (!bin) { console.log('Claude Code is not installed. Run the installer again.'); process.exit(1) }
   fs.mkdirSync(P.claudeConfig, { recursive: true })
-  if (signedIn(HOME)) return console.log('✓ The reader is already signed in to Claude.')
+  // --again: sign in even if Claude Code believes it is signed in (an expired sign-in can still look valid).
+  if (!rest.includes('--again') && signedIn(HOME)) return console.log('✓ The reader is already signed in to Claude.')
   console.log('Sign in to Claude for the reader. A browser page opens: sign in with your own Claude account and click Authorize.')
   console.log('If the page then shows a code, paste it here and press Enter.\n')
   if (!process.stdin.isTTY) console.log('(This window cannot take typed input. If a code appears, run this command again in a terminal window you can type into.)\n')
@@ -138,6 +144,13 @@ async function snapshotCmd() {
 }
 
 async function start() {
+  // Started at login by autostart, nobody sees the output: keep it in logs/autostart.log.
+  if (rest.includes('--no-wait')) {
+    fs.mkdirSync(P.logs, { recursive: true })
+    const f = path.join(P.logs, 'autostart.log'), print = console.log
+    console.log = (...a) => { print(...a); try { fs.appendFileSync(f, `${new Date().toISOString()} ${a.join(' ')}\n`) } catch {} }
+    console.log('start --no-wait')
+  }
   if (!signedIn(HOME)) {
     // Leave a trace for `status`: when autostart runs this at login, nobody sees this output.
     fs.mkdirSync(P.state, { recursive: true })
@@ -197,7 +210,13 @@ async function startSupervisor() {
       console.log(`✗ The reader started but could not connect to Slack. See ${path.join(P.logs, 'bridge.log')}. Usually SLACK_APP_TOKEN (xapp-…) in .env is wrong.`)
       process.exit(1)
     }
-    if (st.phase === 'needs_login') { console.log(`The reader needs a one-time Claude sign-in. Run: ${cliLine('login')}, then start again.`); await stop(true); process.exit(2) }
+    if (st.phase === 'needs_login') {
+      console.log(`The reader's Claude sign-in is missing or has expired. Run: ${cliLine('login --again')}, then start again (or run the install command again).`)
+      await stop(true)
+      // Keep the cause for `status` (stopping wrote "stopped").
+      fs.writeFileSync(READER_STATE, JSON.stringify({ supervisor_pid: null, phase: 'needs_login', reason: 'the reader is not signed in to Claude, or the sign-in has expired', since: Date.now(), updated: Date.now() }, null, 2))
+      process.exit(2)
+    }
     if (st.phase === 'failed') { console.log(`✗ Reader failed to start: ${st.reason}`); process.exit(1) }
     if (st.phase === 'stuck') { console.log(`✗ The reader is waiting on a question it cannot answer by itself. Its screen:\n${readScreen()}\nReport this screen; stop it with: ${cliLine('stop')}`); process.exit(1) }
   }
@@ -227,7 +246,8 @@ function status() {
   else {
     const h = JSON.parse(fs.readFileSync(hb, 'utf8'))
     const age = (Date.now() - Date.parse(h.at)) / 1000
-    up = age < 150
+    // A recent heartbeat alone is not enough: right after a stop it is still fresh for a while.
+    up = age < 150 && (useTmux() ? spawnSync('tmux', ['has-session', '-t', SESSION], { stdio: 'ignore' }).status === 0 : ours(readerState()))
     console.log(up ? `Reader: UP (bot ${h.bot}) · rooms: ${h.rooms.join(', ') || 'none yet'}` : `Reader: DOWN (last seen ${Math.round(age / 60)} min ago). Start it: ${cliLine('start')}`)
   }
   if (!useTmux()) {
@@ -277,7 +297,7 @@ function autostart() {
   <key>ProgramArguments</key><array><string>${x(process.execPath)}</string><string>${x(CLI)}</string><string>start</string><string>--no-wait</string><string>--home</string><string>${x(HOME)}</string></array>
   <key>RunAtLoad</key><true/>
   <key>AbandonProcessGroup</key><true/>
-  <key>StandardOutPath</key><string>${x(path.join(P.logs, 'autostart.log'))}</string>
+  <key>StandardOutPath</key><string>/dev/null</string>
   <key>StandardErrorPath</key><string>${x(path.join(P.logs, 'autostart.log'))}</string>
 </dict></plist>
 `)
@@ -288,6 +308,7 @@ function autostart() {
 }
 
 async function roomsCmd() {
+  keepOutput('rooms.txt')
   const { rooms } = await import('../src/rooms.mjs')
   const only = rest.filter(a => !a.startsWith('--'))
   await rooms(HOME, { apply: rest.includes('--apply'), only })

@@ -77,6 +77,14 @@ if ($LASTEXITCODE) { Fail 'fix the items marked with a cross above, then run the
 Say 'Starting your reader in the background'
 node $Cli stop --home $HomeDir | Out-Null
 node $Cli start --home $HomeDir
+if ($LASTEXITCODE -eq 2) {
+  # The sign-in looked valid but Claude Code asked for it again (expired): sign in again, then retry once.
+  Say 'The reader''s Claude sign-in has expired: signing in again'
+  node $Cli login --again --home $HomeDir
+  if ($LASTEXITCODE) { Fail 'the reader''s Claude sign-in has expired. Run this command again in a PowerShell window you can type into, and finish the sign-in in the browser.' }
+  node $Cli start --home $HomeDir
+}
+if ($LASTEXITCODE -eq 2) { Fail 'the reader''s Claude sign-in has expired. Run this command again in a PowerShell window you can type into, and finish the sign-in in the browser.' }
 if ($LASTEXITCODE) { Fail "the reader did not start. See $HomeDir\logs\reader-screen.txt and $HomeDir\logs\supervisor.log" }
 
 if (-not $NoAutostart) { Say 'Turning on autostart at login'; node $Cli autostart on --home $HomeDir }
