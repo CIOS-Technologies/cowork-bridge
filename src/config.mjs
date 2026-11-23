@@ -56,10 +56,17 @@ export const DEFAULTS = {
   limits: { max_attachment_chars: 150000, refresh_before_question: true },
 }
 
+// Read a text file people may have edited by hand: drop the byte-order mark that Windows tools
+// (Notepad, PowerShell 5) put at the start, which JSON.parse rejects.
+export function readText(f) { return fs.readFileSync(f, 'utf8').replace(/^﻿/, '') }
+export function readJson(f) {
+  try { return JSON.parse(readText(f)) } catch (e) { throw new Error(`${f} is not valid JSON: ${e.message}`) }
+}
+
 export function loadConfig(home) {
   const p = paths(home)
   if (!fs.existsSync(p.config)) throw new Error(`No config at ${p.config}. Run the cowork-bridge skill's setup first.`)
-  const c = JSON.parse(fs.readFileSync(p.config, 'utf8'))
+  const c = readJson(p.config)
   const cfg = { ...DEFAULTS, ...c, reader: { ...DEFAULTS.reader, ...c.reader }, limits: { ...DEFAULTS.limits, ...c.limits } }
   if (!cfg.owner?.name || !cfg.owner?.slack_user_id) throw new Error('config.json needs owner.name and owner.slack_user_id')
   return cfg
@@ -69,9 +76,9 @@ export function loadEnv(home) {
   const f = paths(home).env
   if (!fs.existsSync(f)) return {}
   const out = {}
-  for (const line of fs.readFileSync(f, 'utf8').split(/\r?\n/)) {
+  for (const line of readText(f).split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line)
-    if (m) out[m[1]] = m[2]
+    if (m) out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2')
   }
   return out
 }

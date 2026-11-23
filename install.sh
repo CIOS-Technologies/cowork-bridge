@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
-# cowork-bridge installer for macOS, Linux and WSL. Safe to run again (it updates and restarts).
-#   curl -fsSL https://raw.githubusercontent.com/CIOS-Technologies/cowork-bridge/main/install.sh | bash -s -- [home-folder]
+# cowork-bridge installer for macOS, Linux and WSL. Safe to run again: it updates and restarts.
+#
+#   curl -fsSL https://raw.githubusercontent.com/CIOS-Technologies/cowork-bridge/main/install.sh | bash -s -- ~/cowork-bridge
+#
+# Before running: <home>/config.json and <home>/.env must exist (the cowork-bridge skill writes them).
+# Steps: check Node.js 20+ -> app into <home>/app -> Claude Code (if missing) -> one-time Claude sign-in
+#        for the reader (browser) -> checks -> start in the background -> autostart at login (macOS only).
+# Set COWORK_BRIDGE_NO_AUTOSTART=1 to skip autostart.
 set -euo pipefail
 HOME_DIR="${1:-${COWORK_BRIDGE_HOME:-$HOME/cowork-bridge}}"
 REPO="${COWORK_BRIDGE_REPO:-https://github.com/CIOS-Technologies/cowork-bridge}"
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+fail() { printf '\n\033[31mSTOPPED: %s\033[0m\n' "$*"; exit 1; }
 
 say "cowork-bridge → $HOME_DIR"
+[ -f "$HOME_DIR/config.json" ] || fail "$HOME_DIR/config.json is missing. Run the cowork-bridge skill's setup in Cowork first."
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
-  echo "Node.js 20 or newer is needed."
   case "$(uname)" in
-    Darwin) echo "Install it with:  brew install node   (or from https://nodejs.org)";;
-    *) echo "Install it from https://nodejs.org or with your package manager (for example: sudo apt install nodejs npm)";;
+    Darwin) fail "Node.js 20 or newer is needed. Install it with:  brew install node   (or from https://nodejs.org), then run this again.";;
+    *) fail "Node.js 20 or newer is needed. Install it from https://nodejs.org or your package manager, then run this again.";;
   esac
-  exit 1
+fi
+if [ "$(uname)" = "Linux" ] && ! command -v tmux >/dev/null; then
+  fail "tmux is needed on Linux/WSL to run the reader in the background. Install it (for example: sudo apt install -y tmux), then run this again."
 fi
 
 mkdir -p "$HOME_DIR"
@@ -25,19 +34,23 @@ else
   say "Downloading the app"; mkdir -p "$HOME_DIR/app"
   curl -fsSL "$REPO/archive/refs/heads/main.tar.gz" | tar -xz --strip-components=1 -C "$HOME_DIR/app"
 fi
-(cd "$HOME_DIR/app" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
+# Linux has no ready-made build of the optional terminal library (it uses tmux instead), so skip it there.
+if [ "$(uname)" = "Linux" ]; then OPT="--omit=optional"; else OPT=""; fi
+(cd "$HOME_DIR/app" && npm ci --omit=dev $OPT --no-audit --no-fund --loglevel=error) || fail "npm could not install the app's packages."
 
 if ! command -v claude >/dev/null && [ ! -x "$HOME/.local/bin/claude" ]; then
   say "Installing Claude Code"; curl -fsSL https://claude.ai/install.sh | bash
 fi
-if [ "$(uname)" != "Darwin" ] && ! command -v tmux >/dev/null; then
-  echo "Tip: install tmux (sudo apt install tmux) so the reader runs in the background instead of a terminal window."
-fi
 
-cb() { node "$HOME_DIR/app/bin/cowork-bridge.mjs" "$1" --home "$HOME_DIR"; }
+cb() { node "$HOME_DIR/app/bin/cowork-bridge.mjs" "$@" --home "$HOME_DIR"; }
+say "Signing the reader in to Claude (one time; skipped if already signed in)"
+cb login || fail "the reader is not signed in to Claude. Run the command again and finish the sign-in in the browser."
 say "Checking the setup"
-if cb doctor; then
-  say "Starting your reader"
-  cb stop >/dev/null 2>&1 || true
-  cb start
-fi
+cb doctor || fail "fix the items marked with ✗ above, then run the command again."
+say "Starting your reader in the background"
+cb stop >/dev/null 2>&1 || true
+cb start || fail "the reader did not start. See $HOME_DIR/logs/ (reader-screen.txt, supervisor.log) or run: tmux attach -t cowork-bridge"
+if [ "$(uname)" = "Darwin" ] && [ -z "${COWORK_BRIDGE_NO_AUTOSTART:-}" ]; then say "Turning on autostart at login"; cb autostart on; fi
+say "Status"; cb status || true
+say "DONE. Your reader runs in the background; no window needs to stay open."
+if [ "$(uname)" = "Linux" ]; then echo "After a restart, start it again with: node $HOME_DIR/app/bin/cowork-bridge.mjs start --home $HOME_DIR"; fi

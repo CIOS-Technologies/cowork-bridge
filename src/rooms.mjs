@@ -17,13 +17,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { WebClient } from '@slack/web-api'
-import { paths, loadConfig, loadEnv } from './config.mjs'
+import { paths, loadConfig, loadEnv, readJson } from './config.mjs'
 
 export async function rooms(home, { apply = false, only = [] } = {}) {
   const P = paths(home)
   const cfg = loadConfig(home)
   if (!fs.existsSync(P.directory)) throw new Error(`No ${P.directory}. Create it (see the comment at the top of src/rooms.mjs).`)
-  const dir = JSON.parse(fs.readFileSync(P.directory, 'utf8'))
+  const dir = readJson(P.directory)
   const STATE = path.join(P.state, 'rooms.json')
   const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, 'utf8')) : {}
   const web = new WebClient(loadEnv(home).SLACK_BOT_TOKEN)
