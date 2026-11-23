@@ -11,10 +11,15 @@ set -euo pipefail
 HOME_DIR="${1:-${COWORK_BRIDGE_HOME:-$HOME/cowork-bridge}}"
 REPO="${COWORK_BRIDGE_REPO:-https://github.com/CIOS-Technologies/cowork-bridge}"
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
-fail() { printf '\n\033[31mSTOPPED: %s\033[0m\n' "$*"; exit 1; }
+# The result also goes to <home>/logs/install-result.txt, so the AI helping with setup can read it from the
+# shared folder instead of asking the person to copy the terminal output.
+result() { mkdir -p "$HOME_DIR/logs" 2>/dev/null && printf '%s\nat %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$HOME_DIR/logs/install-result.txt" 2>/dev/null || true; }
+fail() { trap - ERR; result "STOPPED: $*"; printf '\n\033[31mSTOPPED: %s\033[0m\n' "$*"; exit 1; }
+trap 'fail "unexpected error on line $LINENO (see the lines above)"' ERR
 
 say "cowork-bridge → $HOME_DIR"
 [ -f "$HOME_DIR/config.json" ] || fail "$HOME_DIR/config.json is missing. Run the cowork-bridge skill's setup in Cowork first."
+result RUNNING
 if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
   case "$(uname)" in
     Darwin) fail "Node.js 20 or newer is needed. Install it with:  brew install node   (or from https://nodejs.org), then run this again.";;
@@ -28,7 +33,8 @@ fi
 mkdir -p "$HOME_DIR"
 if [ -d "$HOME_DIR/app/.git" ]; then
   say "Updating the app"; git -C "$HOME_DIR/app" pull --ff-only
-elif command -v git >/dev/null; then
+# `git --version`, not `command -v git`: on a fresh Mac, git is a stub that only offers to install the developer tools.
+elif git --version >/dev/null 2>&1; then
   say "Downloading the app"; git clone --depth 1 "$REPO" "$HOME_DIR/app"
 else
   say "Downloading the app"; mkdir -p "$HOME_DIR/app"
@@ -44,13 +50,17 @@ fi
 
 cb() { node "$HOME_DIR/app/bin/cowork-bridge.mjs" "$@" --home "$HOME_DIR"; }
 say "Signing the reader in to Claude (one time; skipped if already signed in)"
-cb login || fail "the reader is not signed in to Claude. Run the command again and finish the sign-in in the browser."
+# When run as `curl … | bash`, standard input is the script itself; give the sign-in the keyboard instead,
+# so a code shown in the browser can be pasted here.
+if (exec </dev/tty) 2>/dev/null; then LOGIN_IN=/dev/tty; else LOGIN_IN=/dev/null; fi
+cb login <"$LOGIN_IN" || fail "the reader is not signed in to Claude. Run the command again and finish the sign-in in the browser."
 say "Checking the setup"
-cb doctor || fail "fix the items marked with ✗ above, then run the command again."
+cb doctor || fail "fix the items marked with a cross (✗) above, then run the command again."
 say "Starting your reader in the background"
 cb stop >/dev/null 2>&1 || true
 cb start || fail "the reader did not start. See $HOME_DIR/logs/ (reader-screen.txt, supervisor.log) or run: tmux attach -t cowork-bridge"
 if [ "$(uname)" = "Darwin" ] && [ -z "${COWORK_BRIDGE_NO_AUTOSTART:-}" ]; then say "Turning on autostart at login"; cb autostart on; fi
 say "Status"; cb status || true
+result DONE
 say "DONE. Your reader runs in the background; no window needs to stay open."
 if [ "$(uname)" = "Linux" ]; then echo "After a restart, start it again with: node $HOME_DIR/app/bin/cowork-bridge.mjs start --home $HOME_DIR"; fi

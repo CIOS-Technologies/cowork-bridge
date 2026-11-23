@@ -66,7 +66,9 @@ function choose(screen, label) {
 }
 
 const RULES = [
-  { test: /Select login method|Paste code here|Not logged in|Please run \/login/i, phase: 'needs_login' },
+  { test: /Select login method|Paste code here|Not logged in|Please run \/login/i, phase: 'needs_login', reason: 'the reader is not signed in to Claude' },
+  // Signed in, but the organization has not turned Channels on: the reader would run but never receive questions.
+  { test: /Channels are not (currently )?(available|enabled)/i, phase: 'stuck', reason: 'Claude Code says Channels are not available. On Team and Enterprise plans an organization owner must turn on Claude Code → Channels in the admin settings' },
   { test: /I am using this for local development/, act: s => choose(s, 'I am using this for local development'), note: 'confirmed development channel' },
   { test: /Yes, I trust this folder/, act: s => choose(s, 'Yes, I trust this folder'), note: 'trusted the reader folder' },
   { test: /No, disable external imports/, act: s => choose(s, 'No, disable external imports'), note: 'kept outside imports disabled' },
@@ -95,7 +97,7 @@ function tick() {
   let handled = false
   for (const r of RULES) {
     if (!r.test.test(s)) continue
-    if (r.phase) { handled = true; if (state.phase !== r.phase) { write({ phase: r.phase }); log(`phase ${r.phase}`) } if (r.phase === 'ready') failures = 0; break }
+    if (r.phase) { handled = true; if (state.phase !== r.phase || state.reason !== r.reason) { write({ phase: r.phase, reason: r.reason }); log(`phase ${r.phase}${r.reason ? ` (${r.reason})` : ''}`) } if (r.phase === 'ready') failures = 0; break }
     if (r.act(s)) { handled = true; lastActionAt = Date.now(); log(r.note); break }
   }
   // A question nobody answered for a minute: say so instead of looking "starting" forever.
@@ -113,8 +115,8 @@ function launch() {
   term = new Terminal({ cols: COLS, rows: ROWS, allowProposedApi: true })
   child = pty.spawn(bin, launchArgs(HOME), { name: 'xterm-256color', cols: COLS, rows: ROWS, cwd: P.reader, env: readerEnv(HOME) })
   child.onData(d => term.write(d))
-  startedAt = Date.now()
-  write({ phase: 'starting', claude_pid: child.pid })
+  startedAt = lastChangeAt = Date.now()
+  write({ phase: 'starting', reason: undefined, claude_pid: child.pid })
   log(`started reader (pid ${child.pid})`)
   child.onExit(({ exitCode }) => {
     log(`reader exited (code ${exitCode})`)
@@ -147,5 +149,11 @@ function stop() {
 try { fs.unlinkSync(STOP) } catch {}
 process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
-setInterval(() => { if (fs.existsSync(STOP)) { try { fs.unlinkSync(STOP) } catch {} stop() } tick() }, 1000)
+setInterval(() => {
+  if (fs.existsSync(STOP)) { try { fs.unlinkSync(STOP) } catch {} stop() }
+  tick()
+  // Keep `updated` fresh: the command line trusts supervisor_pid only while this is recent, because
+  // after a reboot the same process number can belong to an unrelated program.
+  if (Date.now() - state.updated > 10_000) write({})
+}, 1000)
 launch()

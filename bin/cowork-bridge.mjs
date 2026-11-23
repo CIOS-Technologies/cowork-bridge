@@ -62,14 +62,23 @@ async function terminalLibOk() {
 }
 const alive = pid => { try { return !!pid && process.kill(pid, 0) } catch (e) { return e.code === 'EPERM' } }
 function readerState() { try { return JSON.parse(fs.readFileSync(READER_STATE, 'utf8')) } catch { return null } }
+// Our background process is running: its number is alive AND it updated its state file recently
+// (after a reboot the old number may belong to some other program, which we must never stop).
+const ours = s => !!s && alive(s.supervisor_pid) && Date.now() - (s.updated || 0) < 30_000
+const heartbeatAt = () => { try { return Date.parse(JSON.parse(fs.readFileSync(path.join(P.state, 'heartbeat.json'), 'utf8')).at) } catch { return 0 } }
 function readScreen() { try { return fs.readFileSync(path.join(P.logs, 'reader-screen.txt'), 'utf8') } catch { return '(no screen captured)' } }
 
 async function doctor() {
   let good = true
+  // Also keep the result in logs/doctor.txt, so the AI helping with setup can read it from the shared folder.
+  const lines = [], print = console.log
+  console.log = (...a) => { lines.push(a.join(' ')); print(...a) }
+  process.on('exit', () => { try { fs.mkdirSync(P.logs, { recursive: true }); fs.writeFileSync(path.join(P.logs, 'doctor.txt'), `${new Date().toISOString()}\n${lines.join('\n')}\n`) } catch {} })
   console.log(`cowork-bridge home: ${HOME}\n`)
   good &= ok(fs.existsSync(P.config), 'config.json exists', 'run the cowork-bridge skill in Cowork ("make my Cowork answerable")')
   if (!fs.existsSync(P.config)) return process.exit(1)
-  const cfg = loadConfig(HOME)
+  let cfg
+  try { cfg = loadConfig(HOME) } catch (e) { ok(false, `config.json: ${e.message}`, 'fix config.json (see the skill, step 2.5)'); return process.exit(1) }
   const env = loadEnv(HOME)
   good &= ok(/^xapp-/.test(env.SLACK_APP_TOKEN || ''), '.env has SLACK_APP_TOKEN (xapp-…)', 'Slack app page → Basic Information → App-Level Tokens')
   good &= ok(/^xoxb-/.test(env.SLACK_BOT_TOKEN || ''), '.env has SLACK_BOT_TOKEN (xoxb-…)', 'Slack app page → Install App → Bot User OAuth Token')
@@ -82,15 +91,25 @@ async function doctor() {
       fs.writeFileSync(path.join(P.state, 'bot.json'), JSON.stringify({ bot_user_id: a.user_id, bot_name: a.user, team: a.team }, null, 2))
     } catch (e) { good &= ok(false, `Slack bot token rejected: ${e.data?.error || e.message}`, 'regenerate it on the Slack app page (Install App)') }
   }
+  if (/^xapp-/.test(env.SLACK_APP_TOKEN || '')) {
+    try {
+      const { WebClient } = await import('@slack/web-api')
+      await new WebClient(env.SLACK_APP_TOKEN).apps.connections.open()
+      ok(true, 'Slack app-level token works')
+    } catch (e) { good &= ok(false, `Slack app-level token rejected: ${e.data?.error || e.message}`, 'Slack app page → Basic Information → App-Level Tokens: generate one with connections:write, put it in .env') }
+  }
   const found = findCoworkData(cfg.cowork_data_dir)
   good &= ok(found.length > 0, `Cowork data found${found[0] ? `: ${found[0]}` : ''}`, 'set cowork_data_dir in config.json to the folder that contains spaces.json')
   if (found.length > 1 && !cfg.cowork_data_dir) console.log(`    note: ${found.length} Cowork accounts found; using the first. Set cowork_data_dir to pick one.`)
   if (found[0]) {
     const spaces = readJson(path.join(found[0], 'spaces.json')).spaces.map(s => s.name)
+    // For the AI doing the setup: it can read this file from the shared folder instead of asking the user.
+    fs.mkdirSync(P.state, { recursive: true })
+    fs.writeFileSync(path.join(P.state, 'cowork-projects.json'), JSON.stringify({ available: spaces, configured: cfg.projects }, null, 2))
     const missing = cfg.projects.filter(p => !spaces.includes(p))
     good &= ok(cfg.projects.length > 0 && !missing.length, `projects shared with the reader: ${cfg.projects.join(', ') || 'none'}`,
       `available Cowork projects: ${spaces.join(', ')}${missing.length ? ` (unknown: ${missing.join(', ')})` : ''}`)
-    ok(!!skillsDirFor(found[0]) || !!cfg.skills_dir, 'Cowork skills folder found (optional)')
+    console.log(skillsDirFor(found[0]) || cfg.skills_dir ? '✓ Cowork skills folder found' : '– Cowork skills folder not found (optional; fine)')
   }
   const bin = claudeBin()
   good &= ok(!!bin, `Claude Code installed${bin ? `: ${bin}` : ''}`, 'run the installer again, or install from https://code.claude.com/docs/en/quickstart')
@@ -120,7 +139,10 @@ async function snapshotCmd() {
 
 async function start() {
   if (!signedIn(HOME)) {
-    console.log(`The reader needs a one-time Claude sign-in first. Run:\n  ${cliLine('login')}\nthen start again.`)
+    // Leave a trace for `status`: when autostart runs this at login, nobody sees this output.
+    fs.mkdirSync(P.state, { recursive: true })
+    fs.writeFileSync(READER_STATE, JSON.stringify({ supervisor_pid: null, phase: 'needs_login', reason: 'the reader is not signed in to Claude', since: Date.now(), updated: Date.now() }, null, 2))
+    console.log(`The reader needs a one-time Claude sign-in first. Run:\n  ${cliLine('login')}\nthen start again (or run the install command again, which does both).`)
     process.exit(2)
   }
   await snapshotCmd()
@@ -150,7 +172,7 @@ async function startTmux() {
 
 async function startSupervisor() {
   const s = readerState()
-  if (s && alive(s.supervisor_pid)) {
+  if (ours(s)) {
     if (['starting', 'ready', 'restarting'].includes(s.phase)) return console.log(`✓ Already running (${s.phase}).`)
     await stop(true) // waiting for a sign-in or a question: start over now that the cause may be fixed
   }
@@ -161,13 +183,20 @@ async function startSupervisor() {
   fs.mkdirSync(P.state, { recursive: true })
   fs.mkdirSync(P.logs, { recursive: true })
   try { fs.unlinkSync(READER_STATE) } catch {}
+  const launchedAt = Date.now()
   launchDetached(process.execPath, [path.join(APP, 'src', 'supervisor.mjs'), '--home', HOME])
   if (rest.includes('--no-wait')) return console.log('Reader starting in the background.')
   for (let i = 0; i < 90; i++) {
     await sleep(1000)
     const st = readerState()
     if (!st) continue
-    if (st.phase === 'ready') return console.log('✓ Reader is up, running in the background. Check it with: status')
+    if (st.phase === 'ready') {
+      // Claude Code is up; now the bridge inside it must reach Slack (it writes a heartbeat when connected).
+      for (let j = 0; j < 60 && heartbeatAt() < launchedAt; j++) await sleep(1000)
+      if (heartbeatAt() >= launchedAt) return console.log('✓ Reader is up and connected to Slack, running in the background. Check it with: status')
+      console.log(`✗ The reader started but could not connect to Slack. See ${path.join(P.logs, 'bridge.log')}. Usually SLACK_APP_TOKEN (xapp-…) in .env is wrong.`)
+      process.exit(1)
+    }
     if (st.phase === 'needs_login') { console.log(`The reader needs a one-time Claude sign-in. Run: ${cliLine('login')}, then start again.`); await stop(true); process.exit(2) }
     if (st.phase === 'failed') { console.log(`✗ Reader failed to start: ${st.reason}`); process.exit(1) }
     if (st.phase === 'stuck') { console.log(`✗ The reader is waiting on a question it cannot answer by itself. Its screen:\n${readScreen()}\nReport this screen; stop it with: ${cliLine('stop')}`); process.exit(1) }
@@ -180,7 +209,7 @@ async function stop(quiet = false) {
   const say = m => quiet || console.log(m)
   if (useTmux() && spawnSync('tmux', ['kill-session', '-t', SESSION], { stdio: 'ignore' }).status === 0) return say('✓ Reader stopped.')
   const s = readerState()
-  if (!s || !alive(s.supervisor_pid)) return say('Reader is not running.')
+  if (!ours(s)) return say('Reader is not running.')
   fs.writeFileSync(STOP, String(Date.now()))
   for (let i = 0; i < 15; i++) { await sleep(1000); if (!alive(s.supervisor_pid)) return say('✓ Reader stopped.') }
   // Did not stop on request: end it and the reader under it.
@@ -203,7 +232,8 @@ function status() {
   }
   if (!useTmux()) {
     const s = readerState()
-    if (s) console.log(`Background process: ${alive(s.supervisor_pid) ? s.phase : 'not running'}${s.reason ? ` (${s.reason})` : ''}`)
+    const phase = !s ? null : ours(s) ? s.phase : s.phase === 'needs_login' ? 'needs_login' : 'not running'
+    if (phase) console.log(`Background process: ${phase}${s.reason && phase !== 'not running' ? ` (${s.reason})` : ''}`)
     if (s?.phase === 'needs_login') console.log(`  → run: ${cliLine('login')}`)
   }
   console.log(`Autostart at login: ${autostartState() ? 'on' : 'off'}`)
