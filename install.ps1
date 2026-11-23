@@ -41,6 +41,22 @@ $App = Join-Path $HomeDir 'app'
 if (Test-Path (Join-Path $App '.git')) { Say 'Updating the app'; git -C $App pull -q --ff-only 2>&1 | Out-Host }
 else { Say 'Downloading the app'; git clone -q --depth 1 $Repo $App 2>&1 | Out-Host }
 if ($LASTEXITCODE) { Fail 'could not download the app (git).' }
+# A running reader keeps a file of the terminal library open, and Windows refuses to replace an open file.
+# Stop it before updating the packages (it is started again below).
+$Cli = Join-Path $App 'bin\cowork-bridge.mjs'
+if (Test-Path (Join-Path $App 'node_modules')) {
+  Say 'Stopping the reader for the update'
+  node $Cli stop --home $HomeDir | Out-Null
+  # Also end any leftover reader from this folder (for example one started by an older version): only node.exe
+  # running this app's code and the reader's claude.exe. Never match on the folder alone: a Cowork session that
+  # has this folder shared also mentions it on its command line.
+  $appMark = (Join-Path $App 'src\') ; $readerMark = (Join-Path $HomeDir 'reader\.mcp.json')
+  $has = { param($p, $m) $p.CommandLine -and $p.CommandLine.IndexOf($m, [StringComparison]::OrdinalIgnoreCase) -ge 0 }
+  $mine = Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='claude.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { ($_.Name -eq 'node.exe' -and (& $has $_ $appMark)) -or ($_.Name -eq 'claude.exe' -and (& $has $_ $readerMark)) }
+  foreach ($p in $mine) { Invoke-CimMethod -InputObject $p -MethodName Terminate -ErrorAction SilentlyContinue | Out-Null }
+  if ($mine) { Start-Sleep -Seconds 2 }
+}
 # npm.cmd, not npm: PowerShell's default policy blocks npm.ps1.
 Push-Location $App; & npm.cmd ci --omit=dev --no-audit --no-fund --loglevel=error; $npmExit = $LASTEXITCODE; Pop-Location
 if ($npmExit) { Fail 'npm could not install the app''s packages.' }
@@ -49,8 +65,6 @@ if ($npmExit) { Fail 'npm could not install the app''s packages.' }
 $hasClaudeExe = (Test-Path "$HOME\.local\bin\claude.exe") -or (Get-Command claude.exe -ErrorAction SilentlyContinue)
 if (-not $hasClaudeExe) { Say 'Installing Claude Code'; irm https://claude.ai/install.ps1 | iex; Refresh-Path }
 if (-not ((Test-Path "$HOME\.local\bin\claude.exe") -or (Get-Command claude.exe -ErrorAction SilentlyContinue))) { Fail 'Claude Code could not be installed. Run "irm https://claude.ai/install.ps1 | iex" in PowerShell, then run this again.' }
-
-$Cli = Join-Path $App 'bin\cowork-bridge.mjs'
 
 Say 'Signing the reader in to Claude (one time; skipped if already signed in)'
 node $Cli login --home $HomeDir
